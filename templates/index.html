@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ForecastIQ — Intelligent Weather Prediction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+
+  <canvas id="weatherCanvas"></canvas>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon"><i class="fa-solid fa-cloud-bolt"></i></span>
+        <div class="logo-text-wrap">
+          <span class="logo-text">Forecast<span class="accent">IQ</span></span>
+          <span class="logo-sub">Intelligent Weather Prediction using Machine Learning</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="report-btn" onclick="openTicketModal()">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          <span>Report Issue</span>
+        </button>
+        <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">
+          <span id="toggleIcon">🌙</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- SEARCH -->
+  <section class="search-section">
+    <div class="search-box">
+      <i class="fa-solid fa-magnifying-glass search-icon"></i>
+      <input type="text" id="cityInput" class="search-input"
+        placeholder="Search any city — Mumbai, Delhi, Chennai..."
+        autocomplete="off"/>
+      <button class="search-btn" id="searchBtn" onclick="searchWeather()">
+        <span id="btnText">Search</span>
+        <span id="btnLoader" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+      </button>
+    </div>
+    <p class="search-hint">Supports any city in India &bull; ML-powered predictions</p>
+  </section>
+
+  <!-- ERROR -->
+  <div id="errorMsg" class="error-msg hidden">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <span id="errorText"></span>
+  </div>
+
+  <!-- RESULTS -->
+  <main id="results" class="results hidden">
+    <div class="city-header">
+      <div class="city-info">
+        <div class="city-title-row">
+          <h1 class="city-name" id="cityName">—</h1>
+          <button class="bookmark-btn" id="bookmarkBtn" onclick="toggleBookmark()">
+            <i class="fa-regular fa-bookmark" id="bookmarkIcon"></i>
+          </button>
+        </div>
+        <p class="city-time" id="cityTime">—</p>
+      </div>
+      <div class="weather-icon-big" id="weatherIconBig">☀️</div>
+    </div>
+
+    <div class="cards-grid">
+      <div class="card card-current">
+        <div class="card-label"><i class="fa-solid fa-satellite-dish"></i> Current Weather</div>
+        <div class="temp-display">
+          <span class="temp-main" id="currentTemp">--</span>
+          <span class="temp-unit">°C</span>
+        </div>
+        <p class="condition-text" id="conditionText">--</p>
+        <div class="feels-like">Feels like <strong id="feelsLike">--</strong>°C</div>
+        <div class="weather-stats">
+          <div class="stat"><i class="fa-solid fa-droplet"></i><span id="humidity">--</span>%<small>Humidity</small></div>
+          <div class="stat"><i class="fa-solid fa-wind"></i><span id="windSpeed">--</span> km/h<small>Wind</small></div>
+          <div class="stat"><i class="fa-solid fa-gauge"></i><span id="pressure">--</span> hPa<small>Pressure</small></div>
+          <div class="stat"><i class="fa-solid fa-cloud"></i><span id="cloudCover">--</span>%<small>Cloud Cover</small></div>
+        </div>
+      </div>
+
+      <div class="card card-prediction">
+        <div class="card-label"><i class="fa-solid fa-brain"></i> ML Prediction — Next Hour</div>
+        <div class="prediction-grid">
+          <div class="pred-item"><div class="pred-icon">🌡️</div><div class="pred-value" id="predTemp">--°C</div><div class="pred-label">Temperature</div></div>
+          <div class="pred-item"><div class="pred-icon">💧</div><div class="pred-value" id="predHumidity">--%</div><div class="pred-label">Humidity</div></div>
+          <div class="pred-item"><div class="pred-icon" id="rainIcon">🌂</div><div class="pred-value" id="predRain">--</div><div class="pred-label">Rain</div></div>
+          <div class="pred-item"><div class="pred-icon">📊</div><div class="pred-value" id="rainProb">--%</div><div class="pred-label">Rain Chance</div></div>
+        </div>
+        <div class="model-badge"><i class="fa-solid fa-microchip"></i> XGBoost + Random Forest &bull; 97% Accuracy</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="card chart-card">
+        <div class="card-label"><i class="fa-solid fa-temperature-half"></i> Temperature Forecast (5 Days)</div>
+        <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-label"><i class="fa-solid fa-droplet"></i> Humidity Forecast (5 Days)</div>
+        <div class="chart-wrap"><canvas id="humidityChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card chart-card-wide">
+      <div class="card-label"><i class="fa-solid fa-cloud-rain"></i> Rain Probability — Next 5 Days</div>
+      <div class="chart-wrap"><canvas id="rainChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><i class="fa-solid fa-calendar-days"></i> 5-Day Forecast</div>
+      <div class="forecast-row" id="forecastRow"></div>
+    </div>
+  </main>
+
+  <!-- BOTTOM SECTIONS -->
+  <div class="bottom-sections">
+    <div class="side-card">
+      <div class="side-card-title"><i class="fa-solid fa-bookmark"></i> Bookmarked Cities</div>
+      <div id="bookmarksList" class="side-list"><p class="empty-hint">No bookmarks yet.</p></div>
+    </div>
+    <div class="side-card">
+      <div class="side-card-title"><i class="fa-solid fa-clock-rotate-left"></i> Recent Searches</div>
+      <div id="historyList" class="side-list"><p class="empty-hint">No searches yet.</p></div>
+    </div>
+    <div class="side-card">
+      <div class="side-card-title"><i class="fa-solid fa-fire"></i> Most Searched Cities</div>
+      <div id="topCitiesList" class="side-list"><p class="empty-hint">No data yet.</p></div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <p>ForecastIQ &mdash; Intelligent Weather Prediction using Machine Learning</p>
+  </footer>
+
+  <!-- ══════════════════════════════════════════
+       TICKET MODAL
+  ══════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="ticketModalOverlay">
+    <div class="modal" id="ticketModal">
+
+      <!-- Modal Header -->
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-title-icon"><i class="fa-solid fa-headset"></i></span>
+          <div>
+            <h2 class="modal-title">Report an Issue</h2>
+            <p class="modal-subtitle">We'll get back to you within 24 hours via Freshservice</p>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closeTicketModal()">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Success State -->
+      <div id="ticketSuccess" class="ticket-success hidden">
+        <div class="success-icon">✅</div>
+        <h3>Ticket Submitted Successfully!</h3>
+        <p id="successMessage">Your issue has been reported.</p>
+        <div id="ticketIdBox" class="ticket-id-box"></div>
+        <p class="success-sub">Check your email for confirmation from Freshservice.</p>
+        <button class="submit-btn" style="margin-top:16px" onclick="closeTicketModal()">
+          <i class="fa-solid fa-check"></i> Done
+        </button>
+      </div>
+
+      <!-- Form -->
+      <form id="ticketForm" class="modal-body" onsubmit="submitTicket(event)">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-user"></i> Full Name *</label>
+            <input type="text" id="ticketName" class="form-input" placeholder="Your full name" required/>
+          </div>
+          <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-envelope"></i> Email Address *</label>
+            <input type="email" id="ticketEmail" class="form-input" placeholder="your@email.com" required/>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-tag"></i> Issue Type *</label>
+            <select id="ticketIssueType" class="form-input form-select" required>
+              <option value="">Select issue type</option>
+              <option value="Wrong Prediction">Wrong Prediction</option>
+              <option value="City Not Found">City Not Found</option>
+              <option value="App Bug">App Bug</option>
+              <option value="Feature Request">Feature Request</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-location-dot"></i> City (optional)</label>
+            <input type="text" id="ticketCity" class="form-input" placeholder="City you were searching"/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label"><i class="fa-solid fa-pen-to-square"></i> Description *</label>
+          <textarea id="ticketDescription" class="form-input form-textarea"
+            placeholder="Describe the issue in detail (minimum 10 characters)..."
+            rows="4" required oninput="updateCharCount()"></textarea>
+          <span class="char-count" id="charCount">0 characters</span>
+        </div>
+
+        <div id="ticketError" class="ticket-form-error hidden">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          <span id="ticketErrorText"></span>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submitTicketBtn">
+          <span id="submitBtnText"><i class="fa-solid fa-paper-plane"></i> Submit Ticket</span>
+          <span id="submitBtnLoader" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Submitting...</span>
+        </button>
+
+        <p class="form-note">
+          <i class="fa-solid fa-shield-halved"></i>
+          Powered by Freshservice &bull; forecastiqsupport.freshservice.com
+        </p>
+      </form>
+
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

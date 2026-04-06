@@ -1,0 +1,34 @@
+# API keys
+.env
+*.env
+
+# Large data files
+data/raw/
+data/processed/X_train.csv
+data/processed/X_test.csv
+data/processed/training_data.csv
+
+# Force include these 2 small files (app needs them)
+!data/processed/feature_columns.csv
+!data/processed/city_encoder.csv
+
+# Cache
+.cache/
+.cache_openmeteo/
+*.sqlite
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log

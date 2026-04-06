@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ForecastIQ — Intelligent Weather Prediction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+
+  <!-- Rain canvas animation -->
+  <canvas id="weatherCanvas"></canvas>
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon"><i class="fa-solid fa-cloud-bolt"></i></span>
+        <div class="logo-text-wrap">
+          <span class="logo-text">Forecast<span class="accent">IQ</span></span>
+          <span class="logo-sub">Intelligent Weather Prediction using Machine Learning</span>
+        </div>
+      </div>
+      <!-- Theme Toggle -->
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+        <span class="toggle-icon" id="toggleIcon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── SEARCH ── -->
+  <section class="search-section">
+    <div class="search-box">
+      <i class="fa-solid fa-magnifying-glass search-icon"></i>
+      <input
+        type="text"
+        id="cityInput"
+        class="search-input"
+        placeholder="Search any city — Mumbai, Delhi, Chennai..."
+        autocomplete="off"
+      />
+      <button class="search-btn" id="searchBtn" onclick="searchWeather()">
+        <span id="btnText">Search</span>
+        <span id="btnLoader" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+      </button>
+    </div>
+    <p class="search-hint">Supports any city in India &bull; AI-powered predictions</p>
+  </section>
+
+  <!-- ── ERROR ── -->
+  <div id="errorMsg" class="error-msg hidden">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <span id="errorText">City not found</span>
+  </div>
+
+  <!-- ── MAIN RESULTS ── -->
+  <main id="results" class="results hidden">
+
+    <!-- City Header -->
+    <div class="city-header">
+      <div class="city-info">
+        <div class="city-title-row">
+          <h1 class="city-name" id="cityName">—</h1>
+          <!-- Bookmark Button -->
+          <button class="bookmark-btn" id="bookmarkBtn" onclick="toggleBookmark()" title="Bookmark this city">
+            <i class="fa-regular fa-bookmark" id="bookmarkIcon"></i>
+          </button>
+        </div>
+        <p class="city-time" id="cityTime">—</p>
+      </div>
+      <div class="weather-icon-big" id="weatherIconBig">☀️</div>
+    </div>
+
+    <!-- Top Cards -->
+    <div class="cards-grid">
+      <!-- Current Weather -->
+      <div class="card card-current">
+        <div class="card-label"><i class="fa-solid fa-satellite-dish"></i> Current Weather</div>
+        <div class="temp-display">
+          <span class="temp-main" id="currentTemp">--</span>
+          <span class="temp-unit">°C</span>
+        </div>
+        <p class="condition-text" id="conditionText">--</p>
+        <div class="feels-like">Feels like <strong id="feelsLike">--</strong>°C</div>
+        <div class="weather-stats">
+          <div class="stat">
+            <i class="fa-solid fa-droplet"></i>
+            <span id="humidity">--</span>%
+            <small>Humidity</small>
+          </div>
+          <div class="stat">
+            <i class="fa-solid fa-wind"></i>
+            <span id="windSpeed">--</span> km/h
+            <small>Wind</small>
+          </div>
+          <div class="stat">
+            <i class="fa-solid fa-gauge"></i>
+            <span id="pressure">--</span> hPa
+            <small>Pressure</small>
+          </div>
+          <div class="stat">
+            <i class="fa-solid fa-cloud"></i>
+            <span id="cloudCover">--</span>%
+            <small>Cloud Cover</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- ML Prediction -->
+      <div class="card card-prediction">
+        <div class="card-label"><i class="fa-solid fa-brain"></i> Prediction — Next Hour</div>
+        <div class="prediction-grid">
+          <div class="pred-item">
+            <div class="pred-icon">🌡️</div>
+            <div class="pred-value" id="predTemp">--°C</div>
+            <div class="pred-label">Temperature</div>
+          </div>
+          <div class="pred-item">
+            <div class="pred-icon">💧</div>
+            <div class="pred-value" id="predHumidity">--%</div>
+            <div class="pred-label">Humidity</div>
+          </div>
+          <div class="pred-item">
+            <div class="pred-icon" id="rainIcon">🌂</div>
+            <div class="pred-value" id="predRain">--</div>
+            <div class="pred-label">Rain</div>
+          </div>
+          <div class="pred-item">
+            <div class="pred-icon">📊</div>
+            <div class="pred-value" id="rainProb">--%</div>
+            <div class="pred-label">Rain Chance</div>
+          </div>
+        </div>
+        <div class="model-badge">
+          <i class="fa-solid fa-microchip"></i> XGBoost + Random Forest &bull; 97% Accuracy
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="card chart-card">
+        <div class="card-label"><i class="fa-solid fa-temperature-half"></i> Temperature Forecast (5 Days)</div>
+        <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-label"><i class="fa-solid fa-droplet"></i> Humidity Forecast (5 Days)</div>
+        <div class="chart-wrap"><canvas id="humidityChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card chart-card-wide">
+      <div class="card-label"><i class="fa-solid fa-cloud-rain"></i> Rain Probability — Next 5 Days</div>
+      <div class="chart-wrap"><canvas id="rainChart"></canvas></div>
+    </div>
+
+    <!-- 5-Day Forecast Cards -->
+    <div class="card">
+      <div class="card-label"><i class="fa-solid fa-calendar-days"></i> 5-Day Forecast</div>
+      <div class="forecast-row" id="forecastRow"></div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="stats-row" id="statsRow"></div>
+
+  </main>
+
+  <!-- ── BOTTOM SECTIONS (always visible) ── -->
+  <div class="bottom-sections">
+
+    <!-- Bookmarks -->
+    <div class="side-card" id="bookmarksCard">
+      <div class="side-card-title">
+        <i class="fa-solid fa-bookmark"></i> Bookmarked Cities
+      </div>
+      <div id="bookmarksList" class="side-list">
+        <p class="empty-hint">No bookmarks yet. Search a city and click the bookmark icon.</p>
+      </div>
+    </div>
+
+    <!-- Search History -->
+    <div class="side-card" id="historyCard">
+      <div class="side-card-title">
+        <i class="fa-solid fa-clock-rotate-left"></i> Recent Searches
+      </div>
+      <div id="historyList" class="side-list">
+        <p class="empty-hint">No searches yet.</p>
+      </div>
+    </div>
+ 
+    <!-- Top Cities -->
+    <div class="side-card" id="topCitiesCard">
+      <div class="side-card-title">
+        <i class="fa-solid fa-fire"></i> Most Searched Cities
+      </div>
+      <div id="topCitiesList" class="side-list">
+        <p class="empty-hint">No data yet.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── FOOTER ── -->
+  <footer class="footer">
+    <p>ForecastIQ &mdash; Intelligent Weather Prediction using Machine Learning</p>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
