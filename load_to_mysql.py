@@ -9,12 +9,13 @@ import os
 
 # ── CONFIG ──────────────────────────────────────
 DB_CONFIG = {
-    "host":     "localhost",
-    "port":     3306,
-    "user":     "root",
-    "password": "Root@123",
+    "host":     os.getenv("MYSQLHOST", "localhost"),
+    "port":     int(os.getenv("MYSQLPORT", 3306)),
+    "user":     os.getenv("MYSQLUSER", "root"),
+    "password": os.getenv("MYSQLPASSWORD", "Root@123"),
 }
-DB_NAME        = "weather_forecast_db"
+
+DB_NAME = os.getenv("MYSQL_DATABASE", "weather_forecast_db")
 DATASET_PATH   = "data/raw/india_weather_dataset.csv"
 CHUNK_SIZE     = 2000
 MONTHS_TO_LOAD = 12
@@ -259,9 +260,9 @@ def main():
     print("  STEP 3 — Loading Dataset into MySQL")
     print("=" * 60 + "\n")
 
-    create_database()
-    create_tables()
-    load_weather_data()
+    # create_database()
+    # create_tables()
+    # load_weather_data()
     verify()
 
     print("\n" + "=" * 60)
