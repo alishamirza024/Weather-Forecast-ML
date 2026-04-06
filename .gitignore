@@ -7,8 +7,11 @@ data/raw/
 data/processed/X_train.csv
 data/processed/X_test.csv
 data/processed/training_data.csv
+data/processed/y_train_humidity.csv
+data/processed/y_train_rain.csv
+data/processed/y_train_temp.csv
 
-# Force include these 2 small files (app needs them)
+# Force include these small required files
 !data/processed/feature_columns.csv
 !data/processed/city_encoder.csv
 
