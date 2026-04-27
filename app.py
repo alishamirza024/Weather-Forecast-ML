@@ -7,7 +7,8 @@ Run: python app.py
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
-import mysql.connector
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import joblib
 import pandas as pd
 import numpy as np
@@ -27,13 +28,6 @@ API_KEY              = os.getenv("OPENWEATHER_API_KEY")
 FRESHSERVICE_API_KEY = os.getenv("FRESHSERVICE_API_KEY")
 FRESHSERVICE_DOMAIN  = os.getenv("FRESHSERVICE_DOMAIN")
 
-DB_CONFIG = {
-    "host":     os.getenv("MYSQLHOST"),
-    "port":     int(os.getenv("MYSQLPORT", 3306)),
-    "user":     os.getenv("MYSQLUSER"),
-    "password": os.getenv("MYSQLPASSWORD"),
-    "database": os.getenv("MYSQL_DATABASE"),
-}
 
 # ── Load ML Models ───────────────────────────────
 print("Loading ML models...")
@@ -51,16 +45,16 @@ print(f"Models loaded! Features: {len(feature_cols)}")
 # ─────────────────────────────────────────────────
 
 def get_db():
-    return mysql.connector.connect(**DB_CONFIG)
-
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 
 def save_search_history(city_name, was_found, response_ms=0):
     try:
         conn   = get_db()
         cursor = conn.cursor()
+        
         cursor.execute(
-            "INSERT INTO search_history (city_name, was_found, response_ms) VALUES (%s,%s,%s)",
-            (city_name, 1 if was_found else 0, response_ms)
+            "INSERT INTO search_history (city_name, was_found, response_ms) VALUES (%s, %s, %s)",
+            (city_name, bool(was_found), int(response_ms))
         )
         conn.commit()
         cursor.close()
@@ -74,16 +68,17 @@ def save_prediction(city_name, pred):
     try:
         conn   = get_db()
         cursor = conn.cursor()
+        
         cursor.execute("""
             INSERT INTO predictions
-                (city_name, predicted_temp, predicted_humidity,
-                 predicted_rain, rain_probability, model_used)
+               (city_name, predicted_temp, predicted_humidity,
+               predicted_rain, rain_probability, model_used)
             VALUES (%s,%s,%s,%s,%s,%s)
         """, (
             city_name,
             float(pred["predicted_temp"]),
             float(pred["predicted_humidity"]),
-            int(pred["predicted_rain"]),
+            bool(pred["predicted_rain"]),
             float(pred["rain_probability"]),
             "XGBoost+RandomForest"
         ))
@@ -106,18 +101,18 @@ def save_live_cache(weather):
                  pressure_hpa, wind_speed_kmh, cloud_cover_pct,
                  weather_condition, weather_desc, rain_1h_mm, expires_at)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON DUPLICATE KEY UPDATE
-                temperature_c=VALUES(temperature_c),
-                feels_like_c=VALUES(feels_like_c),
-                humidity_pct=VALUES(humidity_pct),
-                pressure_hpa=VALUES(pressure_hpa),
-                wind_speed_kmh=VALUES(wind_speed_kmh),
-                cloud_cover_pct=VALUES(cloud_cover_pct),
-                weather_condition=VALUES(weather_condition),
-                weather_desc=VALUES(weather_desc),
-                rain_1h_mm=VALUES(rain_1h_mm),
-                fetched_at=NOW(),
-                expires_at=VALUES(expires_at)
+            ON CONFLICT (city_name) DO UPDATE SET
+                temperature_c = EXCLUDED.temperature_c,
+                feels_like_c = EXCLUDED.feels_like_c,
+                humidity_pct = EXCLUDED.humidity_pct,
+                pressure_hpa = EXCLUDED.pressure_hpa,
+                wind_speed_kmh = EXCLUDED.wind_speed_kmh,
+                cloud_cover_pct = EXCLUDED.cloud_cover_pct,
+                weather_condition = EXCLUDED.weather_condition,
+                weather_desc = EXCLUDED.weather_desc,
+                rain_1h_mm = EXCLUDED.rain_1h_mm,
+                fetched_at = NOW(),
+                expires_at = EXCLUDED.expires_at
         """, (
             weather["city_name"], weather["temperature_c"],
             weather["feels_like_c"], weather["humidity_pct"],
@@ -136,7 +131,7 @@ def save_live_cache(weather):
 def get_cached_weather(city_name):
     try:
         conn   = get_db()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(
             "SELECT * FROM live_weather_cache WHERE city_name=%s AND expires_at > NOW()",
             (city_name,)
@@ -145,18 +140,20 @@ def get_cached_weather(city_name):
         cursor.close()
         conn.close()
         return row
-    except:
+ 
+    except Exception as e:
+        print(f"[DB ERROR] cache fetch: {e}")
         return None
 
 
 def save_ticket_to_db(name, email, issue_type, city, description, ticket_id):
-    """Save ticket to MySQL as backup."""
+    """Save ticket to PostgreSQL (Supabase) as backup."""
     try:
         conn   = get_db()
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tickets (
-                id              INT AUTO_INCREMENT PRIMARY KEY,
+                id              SERIAL PRIMARY KEY,
                 freshservice_id INT,
                 name            VARCHAR(100),
                 email           VARCHAR(150),
@@ -164,7 +161,7 @@ def save_ticket_to_db(name, email, issue_type, city, description, ticket_id):
                 city            VARCHAR(100),
                 description     TEXT,
                 status          VARCHAR(50) DEFAULT 'Open',
-                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         cursor.execute("""
@@ -422,7 +419,7 @@ def get_history():
     limit = int(request.args.get("limit", 8))
     try:
         conn   = get_db()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
             SELECT city_name, searched_at, was_found, response_ms
             FROM search_history ORDER BY searched_at DESC LIMIT %s
@@ -441,14 +438,14 @@ def get_history():
 def get_stats():
     try:
         conn   = get_db()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT COUNT(*) as total FROM search_history")
         total_searches = cursor.fetchone()["total"]
         cursor.execute("SELECT COUNT(*) as total FROM predictions")
         total_predictions = cursor.fetchone()["total"]
         cursor.execute("""
             SELECT city_name, COUNT(*) as count FROM search_history
-            WHERE was_found=1 GROUP BY city_name ORDER BY count DESC LIMIT 5
+            WHERE was_found = TRUE GROUP BY city_name ORDER BY count DESC LIMIT 5
         """)
         top_cities = cursor.fetchall()
         cursor.execute("SELECT COUNT(*) as total FROM weather_data")
@@ -515,16 +512,20 @@ def get_tickets():
     """GET /api/tickets — all tickets from MySQL"""
     try:
         conn   = get_db()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tickets (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                freshservice_id INT, name VARCHAR(100),
-                email VARCHAR(150), issue_type VARCHAR(100),
-                city VARCHAR(100), description TEXT,
+                id SERIAL PRIMARY KEY,
+                freshservice_id INT,
+                name VARCHAR(100),
+                email VARCHAR(150),
+                issue_type VARCHAR(100),
+                city VARCHAR(100),
+                description TEXT,
                 status VARCHAR(50) DEFAULT 'Open',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+           
         """)
         cursor.execute("""
             SELECT id, freshservice_id, name, email, issue_type,
