@@ -17,6 +17,10 @@ import os
 import time
 import base64
 from datetime import datetime, timedelta
+from psycopg2 import pool
+import threading
+
+
 
 load_dotenv()
 
@@ -44,8 +48,17 @@ print(f"Models loaded! Features: {len(feature_cols)}")
 # DATABASE FUNCTIONS
 # ─────────────────────────────────────────────────
 
+
+db_pool = pool.SimpleConnectionPool(
+    1, 10,
+    os.getenv("DATABASE_URL")
+)
+
 def get_db():
-    return psycopg2.connect(os.getenv("DATABASE_URL"))
+    return db_pool.getconn()
+
+def release_db(conn):
+    db_pool.putconn(conn)
 
 def save_search_history(city_name, was_found, response_ms=0):
     try:
@@ -58,7 +71,7 @@ def save_search_history(city_name, was_found, response_ms=0):
         )
         conn.commit()
         cursor.close()
-        conn.close()
+        release_db(conn)
         print(f"  [DB] search_history saved: {city_name}")
     except Exception as e:
         print(f"  [DB ERROR] search_history: {e}")
@@ -84,7 +97,7 @@ def save_prediction(city_name, pred):
         ))
         conn.commit()
         cursor.close()
-        conn.close()
+        release_db(conn)
         print(f"  [DB] prediction saved: {city_name}")
     except Exception as e:
         print(f"  [DB ERROR] predictions: {e}")
@@ -122,7 +135,7 @@ def save_live_cache(weather):
         ))
         conn.commit()
         cursor.close()
-        conn.close()
+        release_db(conn)
         print(f"  [DB] live_weather_cache saved: {weather['city_name']}")
     except Exception as e:
         print(f"  [DB ERROR] live_weather_cache: {e}")
@@ -138,7 +151,7 @@ def get_cached_weather(city_name):
         )
         row = cursor.fetchone()
         cursor.close()
-        conn.close()
+        release_db(conn)
         return row
  
     except Exception as e:
@@ -171,7 +184,7 @@ def save_ticket_to_db(name, email, issue_type, city, description, ticket_id):
         """, (ticket_id, name, email, issue_type, city, description))
         conn.commit()
         cursor.close()
-        conn.close()
+        release_db(conn)
         print(f"  [DB] ticket saved: #{ticket_id}")
     except Exception as e:
         print(f"  [DB ERROR] tickets: {e}")
@@ -356,11 +369,20 @@ def get_weather():
         save_search_history(city, was_found=False)
         return jsonify({"error": f"City '{city}' not found. Please check spelling."}), 404
     if not from_cache:
-        save_live_cache(weather)
+        threading.Thread(target=save_live_cache, args=(weather,)).start()
+    
     prediction  = make_prediction(weather)
     response_ms = int(time.time() * 1000) - start_ms
-    save_search_history(weather["city_name"], was_found=True, response_ms=response_ms)
-    save_prediction(weather["city_name"], prediction)
+    
+    threading.Thread(
+        target=save_search_history,
+        args=(weather["city_name"], True, response_ms)
+    ).start()
+
+    threading.Thread(
+        target=save_prediction,
+        args=(weather["city_name"], prediction)
+    ).start()
     return jsonify({
         "city": weather["city_name"],
         "current": {
@@ -426,7 +448,7 @@ def get_history():
         """, (limit,))
         rows = cursor.fetchall()
         cursor.close()
-        conn.close()
+        release_db(conn)
         for r in rows:
             r["searched_at"] = str(r["searched_at"])
         return jsonify({"history": rows})
@@ -451,7 +473,7 @@ def get_stats():
         cursor.execute("SELECT COUNT(*) as total FROM weather_data")
         dataset_rows = cursor.fetchone()["total"]
         cursor.close()
-        conn.close()
+        release_db(conn)
         return jsonify({
             "total_searches":    total_searches,
             "total_predictions": total_predictions,
@@ -534,7 +556,7 @@ def get_tickets():
         """)
         rows = cursor.fetchall()
         cursor.close()
-        conn.close()
+        release_db(conn)
         for r in rows:
             r["created_at"] = str(r["created_at"])
         return jsonify({"tickets": rows})
