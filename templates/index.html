@@ -49,6 +49,15 @@
       </button>
     </div>
     <p class="search-hint">Supports any city in India &bull; ML-powered predictions</p>
+    
+    <!-- MODE SELECTOR -->
+    <div class="mode-selector">
+      <button class="mode-btn active" id="mode-General" onclick="setMode('General')"><i class="fa-solid fa-user"></i> General</button>
+      <button class="mode-btn" id="mode-Traveler" onclick="setMode('Traveler')"><i class="fa-solid fa-plane"></i> Traveler</button>
+      <button class="mode-btn" id="mode-Farmer" onclick="setMode('Farmer')"><i class="fa-solid fa-tractor"></i> Farmer</button>
+      <button class="mode-btn" id="mode-Student" onclick="setMode('Student')"><i class="fa-solid fa-graduation-cap"></i> Student</button>
+      <button class="mode-btn" id="mode-Sports" onclick="setMode('Sports')"><i class="fa-solid fa-person-running"></i> Sports</button>
+    </div>
   </section>
 
   <!-- ERROR -->
@@ -101,6 +110,20 @@
       </div>
     </div>
 
+    <!-- SMART INSIGHTS CARD -->
+    <div class="card insights-card" id="insightsCard">
+      <div id="weatherAlertsContainer"></div>
+      <div class="smart-summary-box" id="smartSummaryBox" style="display:none;">
+        <div class="summary-text" id="smartSummaryText"></div>
+        <div class="confidence-badge" id="confidenceScore"></div>
+      </div>
+      <div class="insights-header" style="margin-top: 16px;">
+        <div class="insights-icon-wrap"><i id="insightsIcon" class="fa-solid fa-lightbulb"></i></div>
+        <div class="insights-title">Smart Insights for <span id="insightsModeLabel" class="accent">General</span></div>
+      </div>
+      <div class="insights-text" id="insightsText">Search for a city to get personalized suggestions.</div>
+    </div>
+
     <div class="charts-grid">
       <div class="card chart-card">
         <div class="card-label"><i class="fa-solid fa-temperature-half"></i> Temperature Forecast (5 Days)</div>
@@ -133,12 +156,7 @@
       <div class="side-card-title"><i class="fa-solid fa-clock-rotate-left"></i> Recent Searches</div>
       <div id="historyList" class="side-list"><p class="empty-hint">No searches yet.</p></div>
     </div>
-    <div class="side-card">
-      <div class="side-card-title"><i class="fa-solid fa-fire"></i> Most Searched Cities</div>
-      <div id="topCitiesList" class="side-list"><p class="empty-hint">No data yet.</p></div>
-    </div>
   </div>
-
   <!-- FOOTER -->
   <footer class="footer">
     <p>ForecastIQ &mdash; Intelligent Weather Prediction using Machine Learning</p>
@@ -195,7 +213,6 @@
             <label class="form-label"><i class="fa-solid fa-tag"></i> Issue Type *</label>
             <select id="ticketIssueType" class="form-input form-select" required>
               <option value="">Select issue type</option>
-              <option value="Wrong Prediction">Wrong Prediction</option>
               <option value="City Not Found">City Not Found</option>
               <option value="App Bug">App Bug</option>
               <option value="Feature Request">Feature Request</option>

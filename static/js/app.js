@@ -6,7 +6,10 @@ let tempChart     = null;
 let humidityChart = null;
 let rainChart     = null;
 let currentCity   = "";
+let currentMode   = "General";
+let lastWeatherData = null;
 let bookmarks     = JSON.parse(localStorage.getItem("forecastiq_bookmarks") || "[]");
+let localRecentSearches = [];
 
 const weatherEmoji = {
   Clear:"☀️", Clouds:"☁️", Rain:"🌧️", Drizzle:"🌦️",
@@ -107,10 +110,24 @@ animateWeather();
 
 function setWeatherAnimation(condition) {
   const c = condition.toLowerCase();
-  if (c.includes("rain") || c.includes("drizzle") || c.includes("thunder")) createParticles("rain");
-  else if (c.includes("snow")) createParticles("snow");
-  else if (c.includes("cloud") || c.includes("mist") || c.includes("fog") || c.includes("haze")) createParticles("clouds");
-  else { particles = []; animType = "clear"; }
+  let weatherType = "clear";
+
+  if (c.includes("rain") || c.includes("drizzle") || c.includes("thunder")) {
+    createParticles("rain");
+    weatherType = "rain";
+  } else if (c.includes("snow")) {
+    createParticles("snow");
+    weatherType = "snow";
+  } else if (c.includes("cloud") || c.includes("mist") || c.includes("fog") || c.includes("haze")) {
+    createParticles("clouds");
+    weatherType = "clouds";
+  } else {
+    particles = [];
+    animType = "clear";
+    weatherType = "clear";
+  }
+
+  document.body.setAttribute("data-weather", weatherType);
 }
 
 
@@ -128,34 +145,32 @@ async function searchWeather() {
   setLoading(true); hideError(); hideResults();
 
   try {
-    const [wResp, fResp, sResp] = await Promise.all([
+    const [wResp, fResp] = await Promise.all([
       fetch(`/api/weather?city=${encodeURIComponent(city)}`),
-      fetch(`/api/forecast?city=${encodeURIComponent(city)}`),
-      fetch("/api/stats"),
+      fetch(`/api/forecast?city=${encodeURIComponent(city)}`)
     ]);
 
     const wData = await wResp.json();
     if (!wResp.ok) {
       showError(wData.error || "City not found.");
-      setLoading(false); loadHistory(); return;
+      setLoading(false); return;
     }
 
     currentCity = wData.city;
+    lastWeatherData = wData;
     updateCurrentWeather(wData);
     updatePrediction(wData.prediction);
     setWeatherAnimation(wData.current.condition);
     updateBookmarkButton();
+    generateInsights();
 
     if (fResp.ok) {
       const fData = await fResp.json();
       if (fData.forecast) { updateForecastCards(fData.forecast); drawCharts(fData.forecast); }
     }
-    if (sResp.ok) {
-      const sData = await sResp.json();
-      updateTopCities(sData.top_cities || []);
-    }
 
-    showResults(); loadHistory();
+    addToRecentSearches(wData.city);
+    showResults();
   } catch (err) {
     showError("Connection error. Make sure the server is running.");
     console.error(err);
@@ -494,6 +509,315 @@ function hideError()   { document.getElementById("errorMsg").classList.add("hidd
 function showResults() { document.getElementById("results").classList.remove("hidden"); }
 function hideResults() { document.getElementById("results").classList.add("hidden"); }
 
+// ─────────────────────────────────────────────
+// MODES & SMART INSIGHTS
+// ─────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll(".mode-btn").forEach(btn => btn.classList.remove("active"));
+  document.getElementById(`mode-${mode}`).classList.add("active");
+  document.getElementById("insightsModeLabel").textContent = mode;
+  
+  const iconMap = { "General": "fa-user", "Traveler": "fa-plane", "Farmer": "fa-tractor", "Student": "fa-graduation-cap", "Sports": "fa-person-running" };
+  document.getElementById("insightsIcon").className = `fa-solid ${iconMap[mode]}`;
+  
+  if (lastWeatherData) {
+    generateInsights();
+  }
+}
+
+function generateInsights() {
+  if (!lastWeatherData) return;
+  const c = lastWeatherData.current.condition.toLowerCase();
+  const temp = lastWeatherData.current.temperature;
+  const feelsLike = lastWeatherData.current.feels_like;
+  const humidity = lastWeatherData.current.humidity;
+  const rainProb = lastWeatherData.prediction.rain_probability;
+  const rainMm = lastWeatherData.current.rain_mm;
+  let insights = [];
+
+  // --- Alerts Logic ---
+  const alertsContainer = document.getElementById("weatherAlertsContainer");
+  alertsContainer.innerHTML = "";
+  if (temp > 35) {
+    alertsContainer.innerHTML += `<div class="weather-alert"><i class="fa-solid fa-triangle-exclamation"></i> 🔥 Heat Warning: Extremely high temperatures.</div>`;
+  }
+  if (humidity > 85) {
+    alertsContainer.innerHTML += `<div class="weather-alert"><i class="fa-solid fa-triangle-exclamation"></i> 💧 High Humidity: Stay hydrated and cool.</div>`;
+  }
+  if (rainMm > 5 || rainProb > 80) {
+    alertsContainer.innerHTML += `<div class="weather-alert"><i class="fa-solid fa-triangle-exclamation"></i> ⚠️ Heavy Rain Alert: Expect significant precipitation.</div>`;
+  }
+
+  // --- Confidence Score Logic ---
+  const confidenceScoreEl = document.getElementById("confidenceScore");
+  let confidence = "Medium";
+  let confClass = "medium";
+  if (rainProb > 85 || rainProb < 15) {
+    confidence = "High"; confClass = "high";
+  } else if (rainProb > 40 && rainProb < 60) {
+    confidence = "Low"; confClass = "low";
+  }
+  confidenceScoreEl.textContent = `Confidence: ${confidence}`;
+  confidenceScoreEl.className = `confidence-badge ${confClass}`;
+
+  // --- Smart Summary Logic ---
+  const summaryBox = document.getElementById("smartSummaryBox");
+  const summaryText = document.getElementById("smartSummaryText");
+  let summary = "";
+  if (temp > 30) {
+    summary = `Hot weather today with a ${rainProb}% chance of rain. `;
+  } else if (temp < 15) {
+    summary = `Chilly conditions with a ${rainProb}% chance of rain. `;
+  } else {
+    summary = `Pleasant temperatures with a ${rainProb}% chance of rain. `;
+  }
+  
+  if (rainProb > 70) {
+    summary += "Expect wet conditions; outdoor activities might be affected.";
+  } else if (rainProb < 20) {
+    summary += "Dry and stable; suitable for outdoor plans.";
+  } else {
+    summary += "Keep an umbrella handy just in case.";
+  }
+  summaryText.textContent = summary;
+  summaryBox.style.display = "flex";
+
+  // --- Base Insights (3-5 per mode) ---
+
+  if (currentMode === "Farmer") {
+    if (c.includes("rain") || c.includes("drizzle") || c.includes("thunder")) {
+      insights = [
+        { icon: "🌧", text: "Ideal natural irrigation conditions. Pause pesticide spraying." },
+        { icon: "✔", text: "Ensure field drainage systems are clear to prevent waterlogging." },
+        { icon: "🏠", text: "Monitor livestock shelters for leaks or flooding." },
+        { icon: "🔧", text: "Plan indoor equipment maintenance today." }
+      ];
+    } else if (c.includes("clear") && temp > 30) {
+      insights = [
+        { icon: "💧", text: "High evaporation rates today. Consider early morning or late evening irrigation." },
+        { icon: "🐄", text: "Provide extra shade and water for livestock." },
+        { icon: "☀", text: "Great conditions for solar drying of harvested crops." },
+        { icon: "🌱", text: "Monitor soil moisture closely in shallow-rooted crops." }
+      ];
+    } else if (c.includes("cloud")) {
+      insights = [
+        { icon: "☁", text: "Good day for field work with reduced sun exposure." },
+        { icon: "🍄", text: "Monitor for potential fungal pests due to trapped humidity." },
+        { icon: "✔", text: "Optimal time for applying fertilizers without immediate sun-burn risk." },
+        { icon: "📡", text: "Check weather radar frequently for sudden scattered showers." }
+      ];
+    } else {
+      insights = [
+        { icon: "✔", text: "Stable conditions. Standard farming operations can proceed." },
+        { icon: "🚶", text: "Good weather for inspecting fences and field boundaries." },
+        { icon: "🚚", text: "Favorable for transporting harvested goods." },
+        { icon: "🌱", text: "A regular day to continue seasonal planting or harvesting." }
+      ];
+    }
+  } else if (currentMode === "Traveler") {
+    if (c.includes("rain") || c.includes("thunder")) {
+      insights = [
+        { icon: "🚆", text: "High chance of flight or transit delays. Pack an umbrella." },
+        { icon: "🏛", text: "Plan indoor activities like museums or cafes." },
+        { icon: "🚶", text: "Wear slip-resistant waterproof footwear." },
+        { icon: "🎒", text: "Keep electronic devices safely packed in water-resistant bags." }
+      ];
+    } else if (c.includes("fog") || c.includes("mist")) {
+      insights = [
+        { icon: "🌫", text: "Low visibility may affect road travel and early flights." },
+        { icon: "🚗", text: "Drive safely and use fog lights if on the road." },
+        { icon: "⏱", text: "Keep your itinerary flexible in case of delays." },
+        { icon: "📸", text: "A moody, atmospheric day for unique photography." }
+      ];
+    } else if (c.includes("clear")) {
+      insights = [
+        { icon: "🌤", text: "Perfect weather for sightseeing and outdoor photography!" },
+        { icon: "🕶", text: "Don't forget to pack sunglasses and apply sunscreen." },
+        { icon: "🚲", text: "Ideal conditions for renting a bike or walking tours." },
+        { icon: "👥", text: "Expect tourist hotspots to be more crowded than usual." }
+      ];
+    } else {
+      insights = [
+        { icon: "🧥", text: "Good conditions for travel. Keep a light jacket handy." },
+        { icon: "🚶", text: "Favorable weather for both indoor and outdoor itineraries." },
+        { icon: "🚆", text: "Transit systems should be running on their regular schedules." },
+        { icon: "✔", text: "Comfortable temperatures for exploring the city on foot." }
+      ];
+    }
+  } else if (currentMode === "Student") {
+    if (c.includes("rain") || c.includes("drizzle")) {
+      insights = [
+        { icon: "☂", text: "Rainy day ahead. Bring an umbrella and waterproof backpack to campus." },
+        { icon: "📚", text: "Opt for an indoor study session in the library." },
+        { icon: "🚶", text: "Campus paths might be slippery, walk carefully." },
+        { icon: "☕", text: "Perfect weather for a cozy coffee shop study group." }
+      ];
+    } else if (c.includes("clear") && temp > 25) {
+      insights = [
+        { icon: "🌤", text: "Great weather for an outdoor study session on campus!" },
+        { icon: "💧", text: "Stay hydrated if walking long distances between classes." },
+        { icon: "🚶", text: "Take a break and enjoy the sunshine on the quad." },
+        { icon: "👕", text: "Wear breathable clothing for comfortable lectures." }
+      ];
+    } else if (temp < 15) {
+      insights = [
+        { icon: "🧥", text: "It's chilly! Dress warmly for those early morning lectures." },
+        { icon: "☕", text: "A hot beverage might help you focus during long classes." },
+        { icon: "🌬", text: "Study areas near windows might be a bit drafty today." },
+        { icon: "📚", text: "Great conditions for uninterrupted focus indoors." }
+      ];
+    } else {
+      insights = [
+        { icon: "✔", text: "Comfortable weather for attending classes and campus activities." },
+        { icon: "👥", text: "Good day to join an outdoor club meeting or campus tour." },
+        { icon: "👕", text: "Standard layered clothing is recommended." },
+        { icon: "🚶", text: "Take advantage of the mild weather for a campus walk." }
+      ];
+    }
+  } else if (currentMode === "Sports") {
+    if (c.includes("rain") || c.includes("drizzle") || c.includes("thunder")) {
+      insights = [
+        { icon: "🌧", text: "High chance of rain. Consider moving your workout indoors." },
+        { icon: "🏋", text: "Great day for the gym or a home workout routine." },
+        { icon: "⚠", text: "If running outside, watch out for slippery surfaces." },
+        { icon: "🧥", text: "Wear proper waterproof and reflective gear if outdoors." }
+      ];
+    } else if (temp > 32) {
+      insights = [
+        { icon: "⚠", text: "High temperature! Avoid intense physical activity mid-day." },
+        { icon: "💧", text: "Stay hydrated. Drink water before, during, and after your workout." },
+        { icon: "👕", text: "Wear lightweight, breathable, and light-colored clothing." },
+        { icon: "🏃", text: "Opt for an early morning or late evening run instead." }
+      ];
+    } else if (temp > 25 && c.includes("cloud")) {
+      insights = [
+        { icon: "☁", text: "Warm but cloudy. High humidity might cause faster fatigue." },
+        { icon: "💧", text: "Keep a water bottle handy and take frequent breaks." },
+        { icon: "🏃", text: "Good conditions for a moderate outdoor run or cycling." },
+        { icon: "👕", text: "Moisture-wicking activewear is highly recommended." }
+      ];
+    } else if (temp < 10) {
+      insights = [
+        { icon: "❄", text: "Cold weather! Ensure a proper warm-up to prevent muscle strain." },
+        { icon: "🧥", text: "Wear layered clothing to manage body heat." },
+        { icon: "🧤", text: "Protect extremities with gloves and a warm hat or headband." },
+        { icon: "🏃", text: "Great weather for an energetic run if dressed appropriately." }
+      ];
+    } else {
+      insights = [
+        { icon: "☀", text: "Pleasant weather! Perfect conditions for outdoor sports." },
+        { icon: "🚴", text: "Ideal day for running, cycling, or playing field sports." },
+        { icon: "✔", text: "Comfortable temperatures mean optimal performance." },
+        { icon: "👥", text: "Great time to organize a team sport or group workout." }
+      ];
+    }
+  } else {
+    // General
+    if (c.includes("rain") || c.includes("thunder")) {
+      insights = [
+        { icon: "☂", text: "Don't forget your umbrella today." },
+        { icon: "🚗", text: "Expect slower traffic and allow extra commute time." },
+        { icon: "📚", text: "Great day to stay in and catch up on reading." },
+        { icon: "🏠", text: "Ensure your windows are closed before leaving home." }
+      ];
+    } else if (temp > 35) {
+      insights = [
+        { icon: "⚠", text: "Extreme heat alert! Stay hydrated and drink plenty of water." },
+        { icon: "☀", text: "Avoid prolonged sun exposure, especially mid-day." },
+        { icon: "🐕", text: "Keep pets indoors and ensure they have cool water." },
+        { icon: "❄", text: "Use air conditioning or fans to stay comfortable." }
+      ];
+    } else if (temp < 10) {
+      insights = [
+        { icon: "🧥", text: "Cold weather alert! Bundle up before heading out." },
+        { icon: "🚗", text: "Consider warming up your car before driving." },
+        { icon: "☕", text: "A warm cup of tea or coffee is highly recommended." },
+        { icon: "🏠", text: "Ensure your home heating system is working efficiently." }
+      ];
+    } else if (c.includes("clear")) {
+      insights = [
+        { icon: "🌤", text: "Beautiful clear day. Great time for a walk or outdoor workout." },
+        { icon: "🧴", text: "Remember to wear sunscreen if spending time outside." },
+        { icon: "👕", text: "Perfect conditions for doing laundry and sun-drying." },
+        { icon: "🌇", text: "Enjoy the pleasant evening sky later today." }
+      ];
+    } else {
+      insights = [
+        { icon: "✔", text: "Typical weather conditions today. Have a great day!" },
+        { icon: "🌤", text: "Temperatures are moderate and comfortable." },
+        { icon: "🚆", text: "No severe weather disruptions expected." },
+        { icon: "🚶", text: "A good, balanced day for both work and leisure." }
+      ];
+    }
+  }
+
+  // --- Feels Like Insight ---
+  if (feelsLike > temp + 2) {
+    insights.push({ icon: "🥵", text: `Feels significantly hotter (${feelsLike.toFixed(1)}°C) due to humidity.` });
+  } else if (feelsLike < temp - 2) {
+    insights.push({ icon: "🥶", text: `Feels much colder (${feelsLike.toFixed(1)}°C) due to wind chill.` });
+  } else {
+    insights.push({ icon: "🌡", text: `Comfortable weather conditions. Feels like ${feelsLike.toFixed(1)}°C.` });
+  }
+
+  const listHtml = `<ul style="margin:0; padding-left:0; list-style-type: none; display:flex; flex-direction:column; gap:16px;">` + 
+    insights.map(item => `
+      <li style="display:flex; align-items:flex-start; gap:14px;">
+        <span style="font-size:1.25em; line-height:1.2; display:flex; align-items:center; justify-content:center; width:28px; height:28px; background:rgba(37, 99, 235, 0.1); border-radius:8px; color:#2563eb;">${item.icon}</span> 
+        <span style="flex:1; line-height:1.6; font-size:15px; color:var(--text); opacity:0.9;">${item.text}</span>
+      </li>`).join("") + 
+    `</ul>`;
+
+  document.getElementById("insightsText").innerHTML = listHtml;
+}
+
+
+
+// ─────────────────────────────────────────────
+// RECENT SEARCHES
+// ─────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const res = await fetch("/api/history?limit=5");
+    const data = await res.json();
+    if (data.history) {
+      localRecentSearches = data.history;
+      renderRecentSearches();
+    }
+  } catch (e) {
+    console.error("Failed to load history", e);
+  }
+}
+
+function addToRecentSearches(cityName) {
+  const normalizedCity = cityName.toLowerCase().trim();
+  localRecentSearches = localRecentSearches.filter(item => item.city_name.toLowerCase().trim() !== normalizedCity);
+  localRecentSearches.unshift({
+    city_name: cityName,
+    searched_at: new Date().toISOString()
+  });
+  if (localRecentSearches.length > 5) {
+    localRecentSearches.pop();
+  }
+  renderRecentSearches();
+}
+
+function renderRecentSearches() {
+  const list = document.getElementById("historyList");
+  if (localRecentSearches.length === 0) {
+    list.innerHTML = `<p class="empty-hint">No searches yet.</p>`;
+    return;
+  }
+  
+  list.innerHTML = localRecentSearches.map(item => {
+    return `
+      <div class="history-item" onclick="document.getElementById('cityInput').value='${item.city_name}'; searchWeather();">
+        <span class="history-city">${item.city_name}</span>
+      </div>
+    `;
+  }).join("");
+}
 
 // ─────────────────────────────────────────────
 // INIT

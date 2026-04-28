@@ -352,9 +352,11 @@ def get_weather():
     city = request.args.get("city", "").strip()
     if not city:
         return jsonify({"error": "City name is required"}), 400
+        
     start_ms   = int(time.time() * 1000)
     cached     = get_cached_weather(city)
     from_cache = False
+    
     if cached:
         weather = {k: cached[k] for k in [
             "city_name","temperature_c","feels_like_c","humidity_pct",
@@ -365,9 +367,11 @@ def get_weather():
         from_cache = True
     else:
         weather = fetch_live_weather(city)
+        
     if not weather:
         save_search_history(city, was_found=False)
         return jsonify({"error": f"City '{city}' not found. Please check spelling."}), 404
+            
     if not from_cache:
         threading.Thread(target=save_live_cache, args=(weather,)).start()
     
@@ -412,14 +416,17 @@ def get_forecast():
     city = request.args.get("city", "").strip()
     if not city:
         return jsonify({"error": "City name is required"}), 400
+        
     url    = "https://api.openweathermap.org/data/2.5/forecast"
     params = {"q": city + ",IN", "appid": API_KEY, "units": "metric", "cnt": 40}
     resp   = requests.get(url, params=params, timeout=10)
+    
     if resp.status_code != 200:
         params["q"] = city
         resp = requests.get(url, params=params, timeout=10)
+            
     if resp.status_code != 200:
-        return jsonify({"error": f"Forecast not available for '{city}'"}), 404
+        return jsonify({"error": f"Forecast not available for requested location."}), 404
     data = resp.json()
     return jsonify({
         "city": data["city"]["name"],
@@ -443,8 +450,12 @@ def get_history():
         conn   = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("""
-            SELECT city_name, searched_at, was_found, response_ms
-            FROM search_history ORDER BY searched_at DESC LIMIT %s
+            SELECT MIN(city_name) as city_name, MAX(searched_at) as searched_at 
+            FROM search_history 
+            WHERE was_found = true
+            GROUP BY LOWER(city_name)
+            ORDER BY searched_at DESC 
+            LIMIT %s
         """, (limit,))
         rows = cursor.fetchall()
         cursor.close()
